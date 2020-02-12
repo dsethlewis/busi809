@@ -1,0 +1,365 @@
+---
+title: "HW #3: Interaction Effects and Multi-Group Analyses"
+author: "Daniel Lewis"
+date: "December 25, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up working environment
+
+Load packages
+
+```{r message = F, warning = F}
+# Tidyverse #
+library(tidyverse)
+library(readxl)
+library(broom)
+library(corrr)
+library(magrittr)
+library(wrapr)
+library(viridis)
+library(directlabels)
+
+# Markdown #
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+library(printr)
+library(kableExtra)
+
+# Other #
+library(psych)
+library(here)
+```
+
+# Coding for Multi-Group Analyses
+
+Import data and change variable names.
+
+```{r}
+tbl.2 <- read_xlsx(here("data", "BEER.xlsx"))
+colnames(tbl.2) <- c("bubb", 'beer', 'salt')
+```
+
+View data table
+
+```{r tables-tbl.2}
+ks <- function(t, c) {
+  kable(t, caption = c, format = 'html', escape = F, digits = 3) %>%
+  kable_styling(full_width = F, position = 'left', fixed_thead = T)
+  }
+
+ks(tbl.2[1:10,], 'Beer Data (first 10 observations)')
+```
+
+## Dummy Coding
+
+Dummy code variables
+
+```{r, results = "asis"}
+tbl.2 <- tbl.2 %>%
+  mutate(beer.f = factor(beer),
+         salt.f = factor(salt))
+
+# rename columns for each single-column matrix in 'a' with its name in a
+reCol <- function(a) {
+  n <- names(a)
+  for (i in 1:length(a)) {
+    colnames(a[[i]]) <- c(str_sub(n[i], end = 4L))
+  }
+  a
+}
+
+tbl.2 %>%
+  select_if(is.factor) %>%
+  map(contrasts) %>%
+  reCol() %>%
+  ks("Dummy Codes")
+```
+
+Analyze dummy-coded data
+
+```{r, results = 'asis'}
+fit.2.a <- lm(bubb ~ beer.f + salt.f +
+                beer.f * salt.f, tbl.2)
+
+fit.2.a %>%
+  tidy() %>%
+  ks('Regression: Interaction of Beer and Salt')
+
+tbl.2.e <- tibble(beer.f = factor(c("guinness", "guinness",
+                                    "heineken", "heineken")),
+                  salt.f = factor(c("no", 'yes', 'no', 'yes')))
+
+tbl.2.b <- predict(fit.2.a, newdata = tbl.2.e) %>%
+  set_names(c("irish", "irish & salty",
+              "dutch", "dutch & salty")) %>%
+  enframe(name = "combo", value = 'bubbles')
+
+tbl.2.b %>%
+  ks('Predicted Number of Bubbles')
+
+1:2 %>%
+  map_dbl(~ tbl.2.b$bubbles[.*2] / tbl.2.b$bubbles[.]) %>%
+  set_names(c('guinness','heineken')) %>%
+  enframe("beer", "salt multiplier") %>%
+  ks('Effect of Salt by Beer')
+
+```
+
+## Contrast Coding
+
+Contrast code variables
+
+```{r}
+tbl.2 <- tbl.2 %>%
+  mutate_if(~ is.factor(.) && contrasts(.)[1] != -.5, list(c = ~ C(., (contr.sum(2)/(-2))))) %>%
+  rename_at(vars(contains('_c')),
+            list(~ paste(gsub('.f_c', '', .), 'c', sep = '.')))
+
+tbl.2 %>%
+  select_at(vars(ends_with('.c'))) %>%
+  map(contrasts) %>%
+  reCol %>%
+  ks('Contrast Code')
+```
+
+Analyze contrast-coded data
+
+```{r}
+fit.2.b <- lm(bubb ~ beer.c + salt.c +
+                beer.c * salt.c, tbl.2)
+
+fit.2.b %>%
+  tidy() %>%
+  ks('Regression: Interaction of Contrast-Coded Beer and Salt')
+
+mean(tbl.2$bubb)
+
+tbl.2.c <- tbl.2.e %>%
+  mutate_all(~ C(., (contr.sum(2)/(-2)))) %>%
+  rename_all(~ paste(gsub('.f', '', .), 'c', sep = '.'))
+
+tbl.2.d <- predict(object = fit.2.b, newdata = tbl.2.c) %>%
+  set_names(c("irish", "irish & salty",
+              "dutch", "dutch & salty")) %>%
+  enframe(name = "combo", value = 'bubbles')
+
+tbl.2.d %>%
+  ks('Predicted Number of Bubbles (Contrast Codes)')
+
+1:2 %>%
+  map_dbl(~ tbl.2.d$bubbles[.*2] / tbl.2.d$bubbles[.]) %>%
+  set_names(c('guinness','heineken')) %>%
+  enframe("beer", "salt multiplier") %>%
+  ks('Effect of Salt by Beer (Contrast Codes)')
+```
+
+# Probing Interactions
+
+Import data and change variable names
+
+```{r}
+tbl.3 <- read_xlsx(here('data', 'wfint.xlsx')) %>%
+  rename_all(tolower)
+```
+
+
+View data
+
+```{r}
+ks(tbl.3[1:10,], 'Work and Family Data (First 10 Observations)')
+```
+
+## a. Actual Predictors
+
+Analysis of 'actual' predictors, i.e., actual amount of control, relationship quality, and security at work and with the family
+
+```{r}
+tbl.3 %>%
+  names() %>%
+  grep('wa|fa', ., value = TRUE) %>%
+  map(~ paste('anx ~', .) %>% as.formula()) %>%
+  map_df(~ lm(., tbl.3) %>% tidy()) %>%
+  ks('Regression Output for Anxiety and Actual Control, Relationship Quality, and Security')
+```
+
+## b. Moderation by Gender
+
+Analysis of gender as a moderating variable of effects on anxiety. Continuing to use 'actual' predictors.
+
+Significant interactions are automatically highlighted with green text.
+
+```{r, results = 'asis'}
+tbl.3.b <- tbl.3 %>%
+  names() %>%
+  grep('wa|fa', ., value = TRUE) %>%
+  map(~ paste('anx ~', ., '+ gen +', ., ' * gen') %>% as.formula()) %>%
+  map_df(~ lm(., tbl.3) %>% tidy())
+
+tbl.3.b %>%
+  mutate(estimate = cell_spec(round(estimate, 3), "html",
+                              color = ifelse(grepl(':', term) &
+                                               (p.value < .05),
+                                             "green", "black"))) %>%
+  ks('Regression Output for Moderation by Gender')
+```
+
+Compute the intercepts and slopes
+
+```{r}
+fun.3.b <- function(i, t) {
+  v.e <- t[["estimate"]]
+  v.t <- t[["term"]]
+  s.m <- v.e[i]
+  i.m <- v.e[i - 1]
+  s.w <- s.m + v.e[i + 2]
+  i.w <- i.m + v.e[i + 1]
+  result <- list(term = v.t[[i]],
+                 intercept0 = i.m, slope0 = s.m,
+                 intercept1 = i.w, slope1 = s.w)
+  result
+}
+
+tbl.3.b.2 <- seq(2, 6 * 4, 4) %>%
+  map_df(~ fun.3.b(., tbl.3.b))
+  
+tbl.3.b.2 %>%
+  kable(col.names = c("attribute",
+                      "intercept", "slope",
+                      "intercept", "slope"),
+        digits = 3) %>%
+  kable_styling("striped", position = "left", full_width = F) %>%
+  add_header_above(c(" " = 1, "Men" = 2, "Women" = 2))
+```
+
+Plot the simple intercepts and slopes
+
+```{r}
+vec.3.b <- c('need', 'intercept', 'slope')
+
+tbl.3.b.3 <- tbl.3.b.2 %>%
+{list(men = select(., 1:3), women = select(., c(1, 4:5)))} %>%
+  map(~ set_colnames(., vec.3.b)) %>%
+  bind_rows() %>%
+  add_column(gen = factor(c(rep("male", 6), rep('female', 6))))
+
+tbl.3.b.3 %>%
+  filter(grepl('fa', need)) %>%
+  mutate(new = paste(need, ifelse(gen == 'male',
+                                  '-m', '-f'), sep = '')) %>%
+  ggplot(aes(x = 1, y = intercept,
+             xend = 7, yend = intercept + slope * 7,
+             color = gen)) +
+  geom_segment() +
+  geom_dl(aes(label = new, color = gen),
+          method = list(dl.trans(x = x - 1.5), 'last.bumpup')) +
+  scale_x_continuous(expand = expand_scale(.25)) +
+  scale_y_continuous(expand = expand_scale(.1)) +
+  labs(x = "predictor", y = "anxiety", title = "Plot of Simple Slopes for Family-Related Predictors") +
+  scale_color_discrete(name = "gender")
+```
+
+## c. Moderation by Importance
+
+Analysis of importance as a moderating variable of effects on anxiety.
+
+Significant interactions are automatically highlighted with green text.
+
+```{r}
+tbl.3.c.a <- tbl.3 %>%
+  names() %>%
+  grep('wa|fa', ., value = TRUE) %>%
+  map2(grep('wi|fi', names(tbl.3), value = TRUE),
+       ~ paste('anx ~', .x, '+', .y, '+',
+               .x, '*', .y) %>% as.formula()) %>%
+  map_df(~ lm(., tbl.3) %>% tidy())
+
+tbl.3.c.a %>%
+  mutate(estimate = cell_spec(round(estimate, 3), "html",
+                              color = ifelse(grepl(':', term) &
+                                               (p.value < .05),
+                                             "green", "black"))) %>%
+  ks('Regression Output for Moderation by Importance')
+```
+
+Compute the intercepts and slopes
+
+```{r}
+fun.3.c <- function(i, t, data) {
+  v.e <- t[["estimate"]]  # vector of coefficient estimates
+  v.t <- t[["term"]]      # vector of terms
+  
+  m.t <- v.t[[i + 1]]     # name of moderator
+  m <- data[[m.t]]        # vector of moderator data
+  s.m <- sd(m)            # standard deviation of moderator
+  x.m <- mean(m)          # mean of moderator
+  hi <- x.m + s.m         # +1 SD level of moderator
+  med <- x.m              # mean level of moderator
+  lo <- x.m - s.m         # -1 SD level of moderator
+  
+  int <- v.e[i - 1]       # intercept estimate
+  me <- v.e[i]            # main effect estimate
+  mo <- v.e[i + 1]        # main effect of moderator
+  pr <- v.e[i + 2]        # coeffient of product term estimate
+  
+  s.h <- me + pr * hi     # +1 SD: slope
+  i.h <- int + mo * hi    # +1 SD: intercept
+  s.m <- me + pr * med    # mean: slope
+  i.m <- int + mo * med   # mean: int
+  s.l <- me + pr * lo     # -1 SD: slope
+  i.l <- int + mo * lo    # -1 SD: int
+  
+  list(term = v.t[[i]],   # result
+       int.low = i.l, slo.low = s.l,
+       int.med = i.m, slo.med = s.m,
+       int.hi = i.h, slo.hi = s.h)
+}
+
+tbl.3.c.2 <- seq(2, 6 * 4, 4) %>%
+  map_df(~ fun.3.c(., tbl.3.c.a, tbl.3))
+  
+headers <- c('Intercept', 'Slope')
+
+tbl.3.c.2 %>%
+  kable(col.names = c("Attribute", rep(headers, 3)), digits = 3) %>%
+  kable_styling("striped", position = "left", full_width = F) %>%
+  add_header_above(c(" " = 1, "Low (-1 SD)" = 2, "Medium (Mean)" = 2, 'High (+1 SD)' = 2))
+```
+
+Plot the simple intercepts and slopes
+
+```{r}
+vec.3.c <- c('need', 'intercept', 'slope')
+
+tbl.3.c.3 <- tbl.3.c.2 %>%
+{list(low = select(., 1:3),
+      medium = select(., c(1, 4:5)),
+      high = select(., c(1, 6:7)))} %>%
+  map(~ set_colnames(., vec.3.b)) %>%
+  bind_rows() %>%
+  add_column(lvl = ordered(c(rep("low", 6),
+                            rep('medium', 6),
+                            rep('high', 6)),
+                          levels = c('low', 'medium', 'high')))
+
+tbl.3.c.3 %>%
+  filter(grepl('facon|fasec', need)) %>%
+  mutate(new = paste(need, ifelse(lvl == 'low', '-l',
+                                  ifelse(lvl == 'medium', '-m',
+                                         '-h')), sep = '')) %>%
+  ggplot(aes(x = 1, y = intercept,
+             xend = 7, yend = intercept + slope * 7,
+             color = lvl)) +
+  geom_segment() +
+  geom_dl(aes(label = new, color = lvl),
+          method = list(dl.trans(x = x - 1.5), 'last.bumpup')) +
+  scale_x_continuous(expand = expand_scale(.25)) +
+  scale_y_continuous(expand = expand_scale(.1)) +
+  labs(x = "predictor", y = "anxiety", title = "Plot of Simple Slopes for Significant Interactions with Importance") +
+  scale_color_discrete(name = "Level")
+
+ggsave("imp_simple.png", last_plot(), width = 6, height = 4.5, dpi = 600)
+```
