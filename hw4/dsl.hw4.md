@@ -4498,6 +4498,10 @@ constrained piecewise functions mostly supported our hypothesis that
 more and less of any attribute are worse than adequate, with perhaps the
 exceptions of pay and closeness of supervision.
 
+But loosening the constraints, either by allowing for a discontinuity or
+by shifting to polynomial regression, showed that only span of control
+and closeness of supervision fit the hypothesized pattern.
+
 # References
 
 <div id="refs" class="references">
