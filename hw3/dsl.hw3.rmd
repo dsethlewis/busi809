@@ -2,9 +2,10 @@
 title: "HW #3: Interaction Effects and Multi-Group Analyses"
 author: "Daniel Lewis"
 date: "December 25, 2019"
-output: html_document
+output: github_document
 editor_options: 
   chunk_output_type: console
+always_allow_html: true
 ---
 
 # Set up working environment
