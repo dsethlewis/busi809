@@ -1,0 +1,7 @@
+---
+title: 'HW #5: Difference Scores and Profile Similarity Indices'
+author: "Daniel Lewis"
+date: "2/12/2020"
+output: github_document
+---
+
