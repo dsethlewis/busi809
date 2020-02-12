@@ -2,6 +2,87 @@
 title: 'HW #5: Difference Scores and Profile Similarity Indices'
 author: "Daniel Lewis"
 date: "2/12/2020"
-output: github_document
+output:
+  github_document:
+    pandoc_args: --webtex
 ---
 
+# Set up working environment
+
+As usual, I load the R packages I will be using first.
+
+```{r message = F, warning = F}
+# Tidyverse
+library(readxl)
+library(tidyverse)
+
+# R Markdown
+library(knitr)
+
+# Project
+library(here)
+
+# Statistics
+library(psych)
+```
+
+Next, I will read in the data. I will also glance at the data to see what I'm working with.
+
+```{r}
+tbl.2 <- read_excel(here('data', 'DIF.xlsx'))
+
+tbl.2[1:10, ] %>%
+  kable
+
+describe(tbl.2)[c('n', 'mean', 'sd',
+                  'min', 'max')] %>%
+  kable
+```
+
+It looks like there may be a small number of missing data. While ALTO and ALTI have data for 970 observations each, the other four variables have fewer than 970 observations. Although I am sure there is an appropriate way to handle these missing data [@newmanMissingDataFive2014], I do not have enough information about how the data were collected to be sure of what to do. So let's take a quick look at the observations with NA values and see if any corrections are needed.
+
+```{r}
+tbl.2 %>%
+  filter_all(any_vars(is.na(.))) %>%
+  kable
+```
+
+It looks like the main problem here is that if I take the difference of PAYO and PAYI, I will lose two data points. It is also a problem that two observations have no data on either outcome variable, essentially causing a loss of eight data points for independent variables. R will drop those observations when computing correlations and regressions, and I don't think there is anything to be done about that, so I will simply move on.
+
+Returning to the table of descriptive statistics above, the mean organizational scores on both altruism and pay are lower than their respective mean individual scores. This suggests that individuals tended to report valuing altruism and pay more than their organizations. (The standard deviations for individual scores were lower than for organizations, but I'm not sure what the substantive interpretation of that is.)
+
+Interestingly, nobody reported valuing pay less than -0.67. That fact makes me wonder if perhaps respondents were more worried about future negotiations with employers than about presenting socially desirable responses to researchers.
+
+# a. Construct difference scores and compute correlations
+
+My understanding of algebraic and squared difference scores is that, for two variables, $X$ and $Y$, their algebraic difference is $X - Y$ and their squared difference is $(X-Y)^2$ [@edwards2002maabioaimada].
+
+```{r}
+tbl.2.a <- tbl.2 %>%
+  mutate(
+    alt.df = ALTO - ALTI,
+    alt.sq = alt.df ^ 2,
+    pay.df = PAYO - PAYI,
+    pay.sq = pay.df ^2
+  )
+
+tbl.2.a[1:10, ] %>%
+  kable
+```
+
+As I would expect, the squared differences are all positive (or zero), and are larger or smaller in magnitude than the algebraic differences according to whether the magnitudes of the algebraic differences are greater or less than one.
+
+Now, I will compute the correlations.
+
+```{r}
+vec.2.a.1 <- tbl.2.a[7:10] %>%
+  map_dbl(~ cor(., tbl.2.a$JOBSAT, use = "pairwise.complete.obs"))
+
+vec.2.a.2 <- tbl.2.a[7:10] %>%
+  map_dbl(~ cor(., tbl.2.a$IDENT, use = "pairwise.complete.obs"))
+
+tibble(var = names(vec.2.a.1), job = vec.2.a.1, ide = vec.2.a.2) %>%
+  kable
+```
+
+Overall, the correlations are fairly weak.
