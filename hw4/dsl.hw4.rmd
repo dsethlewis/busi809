@@ -1,0 +1,403 @@
+---
+title: "HW #4: Curvilinear and Piecewise Linear Effects"
+author: "Daniel Lewis"
+date: "January 13, 2020"
+output: github_document
+always_allow_html: true
+bibliography: ../biblio809.bib
+link-citations: true
+csl: ../apa.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up working environment
+
+Load packages
+
+```{r message = F, warning = F}
+# Tidyverse #
+library(readxl)
+library(rlang)
+library(broom)
+library(corrr)
+library(glue)
+library(magrittr)
+library(tidyverse)
+
+# Markdown #
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+library(printr)
+library(kableExtra)
+library(citr)
+library(pander)
+
+# Other #
+library(psych)
+library(here)
+```
+
+# 1. Piecewise vs. Polynomial Regression
+
+According to Neter et al. [-@neter1989], piecewise linear regression is useful when there is a linear relationship between the independent and dependent variables, but that linear relationship varies depending on the subset of the range of the independent variable. So, for example, somebody who is lonely will seek out other people to be with, but someone above a certain critical point of loneliness will stay isolated instead. The effect of loneliness changes after a certain point.
+
+The advantage of piecewise linear regression is that it can account for a change in a theoretical effect. It is also relatively simple to interpret, because it is still essentially a linear relationship: a unit change in $X$ creates a $\beta_1$ change in $Y$. A disadvantage is that few effects in nature should have dramatic changes in their effects at a single point.
+
+Polynomial regression makes the opposite tradeoffs. It is more difficult to interpret a quadratic (let alone a higher-order) term than a linear term, but it is more theoretically justifiable because it is continuously changing and has a more gradual change in slope at its inflection. 
+
+According to @pedhazur1991 [p.452], theoretical considerations come first. Does the theory suggest a piecewise effect? Or does it suggest a polynomial model would better represent the true effect?
+
+# 2. Piecewise Regression
+
+## Setup
+
+First, I imported the data and made the variable names lowercase.
+
+```{r}
+tbl.2 <- read_xlsx(here('data', 'nonlin.xlsx'))
+colnames(tbl.2) <- tolower(colnames(tbl.2))
+```
+
+Then I looked at the raw data and descriptive statistics.
+
+```{r tables-tbl.2}
+ks <- function(x, c) {
+  kable(x, caption = c, escape = F, digits = 3) %>%
+  kable_styling(full_width = F, position = 'left',
+                bootstrap_options = c("striped", "hover", "condensed"))
+  }
+
+ks(tbl.2[1:10,], 'Job Satisfaction Data (first 10 observations)')
+
+describe(tbl.2) %>%
+  ks('Descriptive Statistics')
+```
+
+It looks like we have 12 variables, or six pairs of discrepancy and satisfaction variables. The discrepancy variables range from about -3 to about 3 and the satisfaction variables range from about 1 to 7, so everything matches the description in the assignment.
+
+Next, I created dummy-coded variables for $X_2$, such that the variable would be 0 when the discrepancy variable was less than 0 and 1 otherwise. I also multiplied $X_2$ by the discrepancy variable, $X_1$, to create the product term in Equation 10.24 [@neter1989 p.370].
+
+```{r}
+vec.2 <- tbl.2 %>%
+  colnames() %>%
+  str_sub(1, 3) %>%
+  unique()
+
+vec.2.d <- vec.2 %>%
+  paste('d', sep = '')
+
+tbl.2.a <- tbl.2 %>%
+  mutate_at(vec.2.d, list(f = ~ ifelse(. >= 0, 1, 0), p = ~ (. >= 0) * .)) %>%
+  rename_all(~ str_remove(., 'd_'))
+```
+
+## Constrained Piecewise Regression
+
+Once I had the dummy-coded variables and product terms ready, I created six piecewise functions and estimated their parameters.
+
+```{r}
+# in:  att = 3-character name of attribute
+# out: piecewise linear function
+fun.2 <- function(att, data) {
+  f <- paste(att, 's ~ ', att, 'd + ', att, 'p', sep = '') %>%
+    as.formula()
+  f %>%
+    lm(data)
+}
+
+tbl.2.b <- vec.2 %>%
+  map_df(~ fun.2(., tbl.2.a) %>% tidy())
+
+tbl.2.b %>%
+  ks('Regression Output for Piecewise Functions')
+  
+```
+
+The (Intercept), d, and p terms correspond to $\beta_0$, $\beta_1$, and $\beta_2$, respectively. So, for example, the piecewise model for commute time has a $\hat{\beta_1}$ of 0.513.
+
+Are the functions symmetric about 0? That is equivalent to the hypothesis $$\beta_2 = -2\beta_1$$, because $\beta_2$ is the additional slope added to $\beta_1$ when $X_1 > 0$. When it is $-2\beta_1$, the slopes for the two pieces of the function will be $\beta_1$ and $\beta_1 + \beta_2 = \beta_1 - 2\beta_1 = -\beta_1$.
+
+To test this hypothesis, I computed $\beta_2 - 2\beta_1$ for each model.
+
+```{r}
+tbl.2.c <- tbl.2.b %>%
+  mutate(att = vec.2 %>% rep(each = 3))
+
+tbl.2.c %>%
+  filter(term != '(Intercept)') %>%
+  group_by(att) %>%
+  summarise(diff = (function(x) x[2] - 2 * x[1])(estimate)) %>%
+  ks('Tests of Symmetry Hypothesis')
+```
+
+The results show that only closeness of supervision might be symmetrical. Without doing an inference test, I don't whether it is significantly different from 0, but I feel confident that all the others are very different from 0.
+
+To visualize the results, I plotted each model.
+
+```{r, results="hide"}
+fun.2.b <- function(att, data) {
+  str.1 <- paste(att, 'd', sep = '')
+  str.2 <- paste(att, 's', sep = '')
+  str.3 <- paste(att, 'p', sep = '')
+  dbl.1 <- data[[str.1]]
+  dbl.2 <- c(min(dbl.1), 0, max(dbl.1))
+  tbl.1 <- tibble(!!str.1 := dbl.2,
+                  !!str.3 := c(0, 0, max(dbl.1)))
+  fit.1 <- fun.2(att, data)
+  dbl.3 <- predict(fit.1, tbl.1)
+  
+  tbl.2.a %>%
+    ggplot(aes_string(x = str.1, y = str.2)) +
+    geom_segment(aes(x = dbl.2[1], y = dbl.3[1],
+                     xend = dbl.2[2], yend = dbl.3[2])) +
+    geom_segment(aes(x = dbl.2[2], y = dbl.3[2],
+                     xend = dbl.2[3], yend = dbl.3[3])) +
+    geom_point(size = 1) +
+    labs(x = str.1, y = str.2, title = paste("Piecewise Plot of", att)) +
+    xlim(-3, 3)
+}
+
+vec.2 %>%
+  map(~ fun.2.b(., tbl.2.a))
+```
+
+Interesting. The model for closeness of supervision (sup) looks like the least symmetrical attribute, perhaps only after pay, which has hilariously little data above payd = 0. The plot of travel looks the most symmetrical. I'm not sure what I did wrong.
+
+## Discontinuous Piecewise Regression
+
+I reran the same analysis, this time giving parameters to both $X_1 \times X_2$ and $X_2$, as described in Equation 10.27 [@neter1989 p.373].
+
+```{r}
+# in:  att = 3-character name of attribute
+# out: discontinuous piecewise linear function
+fun.2.c <- function(att, data) {
+  paste(att, 's ~ ', att, 'd + ', att, 'p +', att, 'f', sep = '') %>%
+    as.formula() %>%
+    lm(data)
+}
+
+tbl.2.f <- vec.2 %>%
+  map_df(~ fun.2.c(., tbl.2.a) %>% tidy())
+
+tbl.2.f %>%
+  ks('Regression Output for Discontinuous Piecewise Functions')
+  
+```
+
+In this output, the terms that end in f correspond to $\beta_3$ in Equation 10.27. And when $\beta_3$ is not 0, there is a discontinuity where the discrepancy variable is 0. In the results table above, the only case where a $\beta_3$ appears to be approximately 0 is socf, corresponding to span of control. For all the others, there is a jump at 0. And because they are all positive, I believe that means that the there's a jump *up* from less-than-adequate to adequate.
+
+This analysis tells us that, with the exception of span of control, all the attributes under consideration are discontinuous. And the fact that the discontinuity is one-sided suggests that participants were less dissatisfied with more-than-adequate attributes than with less-than-adequate attributes.
+
+Finally, before moving on to polynomial regression, let's take a look at the discontinuous model plots.
+
+```{r, results="hide"}
+fun.2.b <- function(att, results, data) {
+  res <- filter(results, att == att)[["estimate"]]
+  str.1 <- paste(att, 'd', sep = '')
+  str.2 <- paste(att, 's', sep = '')
+  str.3 <- paste(att, 'p', sep = '')
+  str.4 <- paste(att, 'f', sep = '')
+  dbl.1 <- data[[str.1]]
+  dbl.2 <- c(min(dbl.1), 0, max(dbl.1))
+  tbl.1 <- tibble(!!str.1 := dbl.2,
+                  !!str.3 := c(0, 0, max(dbl.1)),
+                  !!str.4 := c(0, 1, 1))
+  fit.1 <- fun.2.c(att, data)
+  dbl.3 <- predict(fit.1, tbl.1)
+  
+  tbl.2.a %>%
+    ggplot(aes_string(x = str.1, y = str.2)) +
+    # Left piece
+    geom_segment(aes(x = dbl.2[1], y = dbl.3[1],
+                     xend = 0, yend = dbl.3[2] - res[4])) +
+    # Jump
+    geom_segment(aes(x = 0, y = dbl.3[2] - res[4],
+                     xend = 0, yend = dbl.3[2])) +
+    # Right piece
+    geom_segment(aes(x = 0, y = dbl.3[2],
+                     xend = dbl.2[3], yend = dbl.3[3])) +
+    geom_point(size = 1) +
+    labs(x = str.1, y = str.2, title = paste("Discontinuity Plot of", att))
+}
+
+vec.2 %>%
+  map(~ fun.2.b(., tbl.2.c, tbl.2.a))
+```
+
+Across the board, they all have large jumps. That is a sign that the constrained piecewise models were definitely inappropriate.
+
+# 3. Polynomial Regression
+
+## Hierarchical Polynomial Regression
+
+I followed the procedure in [@pedhazur1991] for hierarchical polynomial regression. I tested linear, quadratic, cubic, and quartic models and compared their improvements in fit using the $R^2$ difference test in Equation 18.15 [@pedhazur1991, p.432].
+
+First, I had to do some data management. I collapsed all the satisfaction variables into one variable called 'sat' and all the discrepancy variables into one variable called 'dis', with a grouping variable for the attributes called 'att'.
+
+```{r}
+tbl.3 <- tbl.2 %>%
+  select_at(vars(ends_with('s'))) %>%
+  stack() %>%
+  as_tibble() %>%
+  rename(sat = values, att = ind) %>%
+  mutate(att = str_sub(att, 1, -2)) %>%
+  add_column(dis = tbl.2 %>%
+               select_at(vars(ends_with('d'))) %>%
+               stack() %>% as_tibble() %>%
+               pull("values")) %>%
+  select(-att, everything())
+
+tbl.3[1:10,] %>%
+  ks('Rearranged Data (first 10 obs)')
+```
+
+Second, I regressed sat on dis for each attribute. Note that I used raw polynomials rather than orthogonal polynomials. Instead of showing the output for all 24 (6 attributes &\times$ 4 orders) polynomial models, I printed just the quadratic model for 'com' as an example.
+
+```{r, warning = FALSE}
+fun.3.a <- function(ord) {
+  f <- glue('fit{ord}')
+  t <- glue('tdy{ord}')
+  m <- glue('mod{ord}')
+  exprs(!!{{f}} := map(data, ~ lm(sat ~ poly(dis, !!ord, raw = TRUE), .)),
+        !!{{t}} := map(!!sym(f), tidy),
+        !!{{m}} := map(!!sym(f), glance))
+}
+
+lst.3.a <- 1:4 %>%
+  map(fun.3.a) %>%
+  flatten()
+
+tbl.3.a <- tbl.3 %>%
+  nest(-att) %>%
+  mutate(!!!lst.3.a)
+
+tbl.3.a %>%
+  select_at(vars(matches("fit2"))) %>%
+    map(~ .[[1]] %>% tidy()) %>%
+  unname() %>%
+  pander()
+```
+
+Third, I *tried* to compare model fit in order to determine the highest-order model with significant improvement on its next-lowest-order model.
+
+```{r}
+fun.3.b <- function(att, ord, tbl) {
+  results <- tbl %>%
+    filter(att == !!att) %>%
+    select_at(vars(matches(paste("fit", seq(ord), sep = '', collapse = '|')))) %>%
+    map(~ .[[1]]) %>%
+    unname() %>%
+    do.call(what = anova)
+}
+
+lst.3.b <- vec.2 %>%
+  map(~ map(.x = 1:4, .f = fun.3.b, att = ., tbl = tbl.3.a)) %>%
+  set_names(vec.2)
+```
+
+But, as you can see, I did it wrong. I accidentally compared all 4 models for each attribute to each other all at once.
+
+Fourth, I tried again.
+
+```{r}
+fun.3.b.2 <- function(att, ord, tbl) {
+  stopifnot(att %in% vec.2)
+  stopifnot(ord >= 1 && ord <= 4)
+  results <- tbl %>%
+    filter(att == !!att) %>%
+    select_at(vars(matches(paste("fit", max(ord-1, 1):ord,
+                                 sep = '', collapse = '|')))) %>%
+    map(~ .[[1]]) %>%
+    unname() %>%
+    do.call(what = anova)
+  results
+}
+
+fun.3.c <- function(att, tbl) {
+  helper <- function() {
+    assign('r', fun.3.b.2(att, i, tbl), parent.frame())
+    assign('p', as.vector(na.omit(r$`Pr(>F)`)), parent.frame())
+  }
+  i <- 1
+  helper()
+  p <- 0
+  prev <- r
+  while (i <= 4 && p < .05) {
+    i = i + 1
+    prev <- r
+    helper()
+  }
+  if (p < .05) {
+    r
+  } else {
+    prev
+  }
+}
+
+lst.3.c <- vec.2 %>%
+  map(fun.3.c, tbl = tbl.3.a)
+
+chr.3 <- lst.3.c %>%
+  map2_chr(vec.2, ~ glue("Attr: {.y} || Order: {184 - .x[names(.x)[match(ifelse('Res.Df' %in% names(.x), 'Res.Df', 'Df'), names(.x))]][[1]][[2]]}"))
+
+lst.3.c %>%
+  set_names(chr.3) %>%
+  pander()
+```
+
+Excellent, it worked this time.
+
+To find support for the hypothesis that satisfaction is greatest when discrepancy is 0, we would need to see that a quadratic model best fit the data. According to the results above, that is the case for commute time, pay, span of control, closeness of supervision, and travel.
+
+However, for variety, a quadratic model failed to improve on the fit of the linear model.
+
+## Plotting Polynomial Models
+
+Finally, let's look at some plots. First, quadratic plots for all six attributes.
+
+```{r, results = "hide"}
+map(vec.2, ~ ggplot(filter(tbl.3, att == .), aes(x = dis, y = sat)) +
+      geom_point() +
+      geom_smooth(method = lm, formula = y ~ poly(x, 2, raw = TRUE)) +
+      xlim(-3, 3) +
+      ggtitle(glue("Quadratic Plot for {.}"))) %>%
+  set_names(vec.2)
+```
+
+Frankly, it's difficult to see why these quadratic models performed signficantly better than the linear models. In at least some cases (e.g., span of control, travel), it looks like it may be due to a small number of high-leverage outliers. But perhaps the density of points matter, since these plots show multiple overlapping points.
+
+Span of control and travel appear to best support the hypothesis. They are both concave with vertices approximately at zero. More and less span of control or travel are worse than just the adequate amount.
+
+The others, while clearly parabolic, do not have both of these features. Commute time and closeness of supervision veer down and right, suggesting that more is worse, but less is not.
+
+Pay is convex and veering up to the right, but it has so little variation that we can't even test our hypothesis. All we can say is more pay is better and hardly anyone is satisfied with what they have.
+
+Also, the plots for pay and variety are so similar, that it's a wonder the quadratic model for pay represented a signficant improvement over the linear model. The curvature in the pay plot is very, very slight. If we go back to the ANOVA tables above, we can see that pay did in fact have the largest $p$-value of the quadratic models ($F \approx 59.31$, $p \approx .04$).
+
+For pay and variety, let's overlay the linear and quadratic plots and see how they compare.
+
+```{r, results = "hide"}
+map(c('pay','var'), ~ ggplot(filter(tbl.3, att == .), aes(x = dis, y = sat)) +
+      geom_point() +
+      geom_smooth(method = lm, formula = y ~ poly(x, 2, raw = TRUE)) +
+      geom_smooth(method = lm) +
+      xlim(-3, 3) +
+      ggtitle(glue("Overlay Plot for {.}"))) %>%
+  set_names(c('pay','var'))
+```
+
+There is some slight difference for pay. With enough power, it's possible to understand why the quadratic model would outperform the linear model.
+
+The two curves are sitting almost precisely upon each other for variety.
+
+# 4. Conclusion
+
+There is not a clear story to tell here. The first analysis with constrained piecewise functions mostly supported our hypothesis that more and less of any attribute are worse than adequate, with perhaps the exceptions of pay and closeness of supervision.
+
+
+
+# References
