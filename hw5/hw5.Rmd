@@ -5,6 +5,9 @@ date: "2/12/2020"
 output:
   github_document:
     pandoc_args: --webtex
+bibliography: ../biblio809.bib
+link-citations: true
+csl: ../apa.csl
 ---
 
 # Set up working environment
@@ -86,3 +89,5 @@ tibble(var = names(vec.2.a.1), job = vec.2.a.1, ide = vec.2.a.2) %>%
 ```
 
 Overall, the correlations are fairly weak.
+
+# References

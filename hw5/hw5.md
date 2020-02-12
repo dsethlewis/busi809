@@ -63,11 +63,11 @@ describe(tbl.2)[c('n', 'mean', 'sd',
 It looks like there may be a small number of missing data. While ALTO
 and ALTI have data for 970 observations each, the other four variables
 have fewer than 970 observations. Although I am sure there is an
-appropriate way to handle these missing data
-\[@newmanMissingDataFive2014\], I do not have enough information about
-how the data were collected to be sure of what to do. So let’s take a
-quick look at the observations with NA values and see if any corrections
-are needed.
+appropriate way to handle these missing data (Newman,
+[2014](#ref-newmanMissingDataFive2014)), I do not have enough
+information about how the data were collected to be sure of what to do.
+So let’s take a quick look at the observations with NA values and see if
+any corrections are needed.
 
 ``` r
 tbl.2 %>%
@@ -115,7 +115,7 @@ two variables, ![X](https://latex.codecogs.com/png.latex?X "X") and
 difference is ![X - Y](https://latex.codecogs.com/png.latex?X%20-%20Y
 "X - Y") and their squared difference is
 ![(X-Y)^2](https://latex.codecogs.com/png.latex?%28X-Y%29%5E2 "(X-Y)^2")
-\[@edwards2002maabioaimada\].
+(Edwards, [2002](#ref-edwards2002maabioaimada)).
 
 ``` r
 tbl.2.a <- tbl.2 %>%
@@ -169,3 +169,25 @@ tibble(var = names(vec.2.a.1), job = vec.2.a.1, ide = vec.2.a.2) %>%
 | pay.sq | \-0.2877371 | \-0.2360829 |
 
 Overall, the correlations are fairly weak.
+
+# References
+
+<div id="refs" class="references">
+
+<div id="ref-edwards2002maabioaimada">
+
+Edwards, J. R. (2002). Alternatives to Difference Scores. In F. Drasgow
+& N. Schmitt (Eds.), *Measuring and analyzing behavior in organizations:
+Advances in measurement and data analysis*. Jossey-Bass.
+
+</div>
+
+<div id="ref-newmanMissingDataFive2014">
+
+Newman, D. A. (2014). Missing Data: Five Practical Guidelines.
+*Organizational Research Methods*, *17*(4), 372–411.
+<https://doi.org/10.1177/1094428114548590>
+
+</div>
+
+</div>
